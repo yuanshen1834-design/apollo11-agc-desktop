@@ -1,0 +1,24 @@
+1 ICON "app.ico"
+1 VERSIONINFO
+FILEVERSION 1,2,0,0
+PRODUCTVERSION 1,2,0,0
+FILEOS 0x4
+FILETYPE 0x1
+{
+  BLOCK "StringFileInfo"
+  {
+    BLOCK "040904B0"
+    {
+      VALUE "CompanyName", "sqdcz (original) / Desktop wrapper"
+      VALUE "FileDescription", "Apollo 11 AGC - Guidance Computer Simulator"
+      VALUE "FileVersion", "1.2.0.0"
+      VALUE "ProductName", "Apollo 11 AGC Desktop"
+      VALUE "ProductVersion", "1.2.0.0"
+      VALUE "LegalCopyright", "Original game: sqdcz (github.com/sqdcz/apollo11-agc)"
+    }
+  }
+  BLOCK "VarFileInfo"
+  {
+    VALUE "Translation", 0x409, 1200
+  }
+}

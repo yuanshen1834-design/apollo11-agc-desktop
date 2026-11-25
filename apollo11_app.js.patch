@@ -1,0 +1,331 @@
+--- apollo11-agc/apollo11_app.js	2026-11-25 17:49:04.354611400 +0800
++++ Apollo11AGC/web/apollo11_app.js	2026-11-25 18:22:04.000000000 +0800
+@@ -1256,6 +1256,7 @@
+ /* ================= 模型：宇航员 / 月球车 / 国旗 / ALSEP ================= */
+ function buildAstro() {
+   var g = new THREE.Group();
++  var L = { thighs: [], shins: [], arms: [], gloves: [] };
+   var torso = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 1.05, 16), M.fabric);
+   torso.position.y = 1.55; g.add(torso);
+   /* PLSS 背包 */
+@@ -1271,15 +1272,21 @@
+   [1, -1].forEach(function (s) {
+     var arm = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.12, 0.9, 12), M.fabric);
+     arm.position.set(s * 0.5, 1.55, 0.04); arm.rotation.z = s * 0.42; g.add(arm);
++    L.arms.push(arm);
+     var glove = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), M.fabric);
+     glove.position.set(s * 0.72, 1.1, 0.08); g.add(glove);
++    L.gloves.push(glove);
+     var thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.15, 0.62, 12), M.fabric);
+     thigh.position.set(s * 0.2, 0.85, 0); g.add(thigh);
++    L.thighs.push(thigh);
+     var shin = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.13, 0.6, 12), M.fabric);
+     shin.position.set(s * 0.2, 0.32, 0.02); g.add(shin);
++    L.shins.push(shin);
+     var boot = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.5), M.dark);
+     boot.position.set(s * 0.2, 0.09, 0.08); g.add(boot);
++    L.gloves.push(boot);
+   });
++  g.userData.limbs = L;
+   g.visible = false;
+   scene.add(g);
+   return g;
+@@ -1612,7 +1619,7 @@
+ scene.add(dust);
+ 
+ /* ================= 状态 ================= */
+-var state = { mode: 'auto', idx: 0, ct: 0, run: false, speed: 1, cam: 'chase', alarm: false, met: 0, snap: true };
++var state = { mode: 'auto', idx: 0, ct: 0, run: false, speed: 1, cam: 'chase', alarm: false, met: 0, snap: true, roverMode: 'rover' };
+ var MAXT = 45000, FUEL0 = 8200, G_MOON = 1.62;
+ var D = { alt: 15000, vs: -30, hs: 1500, thr: 1, fuel: FUEL0, dry: 2100, t: 0, done: false, ok: false, phase: 'P63', pitch: 0 };
+ var userThr = 0.5;
+@@ -1620,6 +1627,7 @@
+ var dtLast = 1 / 60;
+ var abortS = { t: 0, active: false, done: false };
+ var roverS = { x: 0, z: 0, y: 0, head: 0, spd: 0, batt: 100, roll: 0 };
++var astroS = { x: 0, z: 0, head: 0, spd: 0, phase: 0 };
+ 
+ function resetD() {
+   D.alt = 15000; D.vs = -30; D.hs = 1500; D.thr = 1; D.fuel = FUEL0;
+@@ -1641,6 +1649,19 @@
+   state.snap = false;
+   camera.lookAt(camTgt);
+ }
++function aimSmooth(px, py, pz, tx, ty, tz, k) {
++  _tmpA.set(px, py, pz);
++  _tmpB.set(tx, ty, tz);
++  if (state.snap) {
++    camera.position.copy(_tmpA);
++    camTgt.copy(_tmpB);
++    state.snap = false;
++  } else {
++    camera.position.lerp(_tmpA, k);
++    camTgt.lerp(_tmpB, Math.min(1, k * 1.6));
++  }
++  camera.lookAt(camTgt);
++}
+ function vk() { return state.cam === 'ext' ? 2.6 : state.cam === 'near' ? 0.42 : 1; }
+ function faceDir(obj, dx, dy, dz, roll) {
+   _tmpC.set(dx, dy, dz);
+@@ -2047,10 +2068,37 @@
+   update: function (dt) {
+     var t = state.ct / this.dur;
+     var w = ease(clamp(t * 1.1, 0, 1));
++    /* 走路动画：腿/手摆动 + 身体轻弹（低重力步伐），朝向行进方向 */
++    var moving = (w > 0.02 && w < 0.98) ? 1 : 0;
++    var phase = state.ct * 9.0;
++    var L = astro.userData.limbs;
++    if (L) {
++      L.thighs.forEach(function (m, i) {
++        var sw = Math.sin(phase + i * Math.PI);
++        m.position.z = sw * 0.14 * moving;
++        m.rotation.x = sw * 0.35 * moving;
++      });
++      L.shins.forEach(function (m, i) {
++        var sw = Math.sin(phase + i * Math.PI + 0.5);
++        m.position.z = sw * 0.12 * moving;
++        m.rotation.x = sw * 0.30 * moving;
++      });
++      L.arms.forEach(function (m, i) {
++        var sw = Math.sin(phase + i * Math.PI + Math.PI);
++        m.position.z = sw * 0.09 * moving;
++        m.rotation.x = sw * 0.28 * moving;
++      });
++      L.gloves.forEach(function (m, i) {
++        if (i < 2) {
++          m.position.z = Math.sin(phase + i * Math.PI + Math.PI) * 0.11 * moving;
++        }
++      });
++    }
+     astro.position.x = lerp(-7, 5.5, w);
+-    astro.position.z = 5 + Math.sin(state.ct * 1.6) * 0.4;
+-    astro.position.y = Math.abs(Math.sin(state.ct * 2.2)) * 0.22;
+-    astro.rotation.y = -0.5;
++    astro.position.z = 5 + Math.sin(phase * 0.35) * 0.3;
++    astro.position.y = Math.abs(Math.sin(phase * 0.5)) * 0.08 * moving;
++    astro.rotation.y = Math.PI / 2 + Math.sin(phase * 0.5) * 0.06;
++    astro.rotation.z = Math.sin(phase) * 0.02 * moving;
+     var fs = clamp((t - 0.4) * 2.6, 0, 1);
+     flag.scale.setScalar(Math.max(0.001, fs));
+     if (fs > 0.92 && !this._flag) { this._flag = true; log('展开并固定国旗（带回力杆，所以看起来是"飘"的）。', 'g'); }
+@@ -2354,6 +2402,9 @@
+ 
+ /* ================= 月面漫游 ================= */
+ function enterRover() {
++  state.roverMode = 'rover';
++  var _b = btnSwitch;
++  if (_b) _b.textContent = '🚀 切换到宇航员步行';
+   hideAll(); setClip(0.08, 400000);
+   ground.visible = true; rocks.visible = true;
+   rover.visible = true; flag.visible = true; alsep.visible = true; astro.visible = true;
+@@ -2363,6 +2414,7 @@
+   alsep.position.set(-11, 0, 9);
+   astro.position.set(-4, 0, 4); astro.rotation.y = Math.PI;
+   roverS.x = 0; roverS.z = 0; roverS.head = 0; roverS.spd = 0; roverS.batt = 100; roverS.roll = 0;
++  astroS.x = 1.6; astroS.z = 1.2; astroS.head = 0; astroS.spd = 0; astroS.phase = 0;
+   $('teleLbl').textContent = '漫游数据';
+   setPhase('月面漫游模式', '用 WASD / 方向键驾驶月球车。真实月球车由航天员手动操控，最高约 18 km/h，靠两组银锌电池供电，三次 EVA 共行驶约 35 km。', 'rover');
+   log('月球车就绪：WASD 驾驶，A/D 转向。');
+@@ -2370,22 +2422,42 @@
+ function stepRover(dt) {
+   var acc = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+   var turn = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
+-  roverS.spd += (acc * 5.5 - (acc ? 0 : roverS.spd * 1.8)) * dt;
+-  roverS.spd = clamp(roverS.spd, -2.2, 5);
+-  roverS.head += turn * 1.35 * dt * (roverS.spd >= 0 ? 1 : -1);
+-  roverS.x += Math.sin(roverS.head) * roverS.spd * dt;
+-  roverS.z += Math.cos(roverS.head) * roverS.spd * dt;
++  /* --- 纵向：平滑加速 / 刹车 / 低摩擦滑行（真空低重力手感）--- */
++  if (acc > 0) {
++    roverS.spd += 3.2 * dt;
++  } else if (acc < 0) {
++    roverS.spd -= (roverS.spd > 0.05 ? 6.5 : 2.2) * dt;
++  } else {
++    var dec = roverS.spd * 0.45 * dt;
++    if (Math.abs(roverS.spd) <= Math.abs(dec)) roverS.spd = 0;
++    else roverS.spd -= dec;
++  }
++  roverS.spd = clamp(roverS.spd, -2.2, 5.0);
++  /* --- 转向：需要速度才转，转向率随速度增长（真实车感）--- */
++  var sp = Math.abs(roverS.spd);
++  if (sp > 0.15) {
++    var rate = 1.5 * Math.min(1, sp / 1.5) * (roverS.spd >= 0 ? 1 : -1);
++    roverS.head += turn * rate * dt;
++  }
++  /* 车头朝 +x（模型：操纵台/天线在前），rotation.y=head 时世界方向 = (cos h, 0, -sin h) */
++  roverS.x += Math.cos(roverS.head) * roverS.spd * dt;
++  roverS.z -= Math.sin(roverS.head) * roverS.spd * dt;
+   roverS.batt = Math.max(0, roverS.batt - Math.abs(roverS.spd) * 0.035 * dt);
+   rover.position.set(roverS.x, 0, roverS.z);
+   rover.rotation.y = roverS.head;
+-  /* 轮子转动与轻微俯仰 */
++  /* 车身：转弯侧倾（绕前进轴 x）+ 颠簸（俯仰绕 z） */
++  var spf = Math.min(1, sp / 2.5);
++  rover.rotation.x = lerp(rover.rotation.x, -turn * 0.05 * spf, 0.12);
++  rover.rotation.z = Math.sin(state.ct * 11) * 0.008 * spf;
++  /* 轮子转动 */
+   var spin = roverS.spd * dt * 2.6;
+   (rover.userData.wheels || []).forEach(function (w) { w.rotation.z -= spin; });
+-  var d = 23 * vk();
+-  aim(roverS.x + Math.sin(roverS.head) * d * 0.55 + Math.cos(roverS.head) * d * 0.75,
+-    1.9 + d * 0.30,
+-    roverS.z + Math.cos(roverS.head) * d * 0.55 + Math.sin(roverS.head) * d * 0.75,
+-    roverS.x, 0.95, roverS.z);
++  /* --- 摄像机：车后上方第三人称，平滑跟随（有跟随惯性）--- */
++  var d = 13 * vk() * (state.cam === 'near' ? 0.55 : 1);
++  var camX = roverS.x - Math.cos(roverS.head) * d;
++  var camZ = roverS.z + Math.sin(roverS.head) * d;
++  var camH = 2.3 + d * 0.30;
++  aimSmooth(camX, camH, camZ, roverS.x, 1.0, roverS.z, 0.16);
+   teleData = [
+     ['速度', Math.abs(roverS.spd * 3.6).toFixed(1), 'km/h'],
+     ['航向', Math.round((roverS.head * 180 / Math.PI + 360) % 360) + '°', ''],
+@@ -2396,6 +2468,119 @@
+   ];
+ }
+ 
++/* ================= 宇航员步行控制 ================= */
++function stepAstroWalk(dt) {
++  var acc = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
++  var turn = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
++  /* 速度：步行加速/减速（月球 1/6 重力，步幅轻快） */
++  if (acc > 0) {
++    astroS.spd += 3.0 * dt;
++  } else if (acc < 0) {
++    astroS.spd -= 2.4 * dt;
++  } else {
++    astroS.spd -= astroS.spd * 5.0 * dt;
++  }
++  astroS.spd = clamp(astroS.spd, -1.4, 2.2);
++  var moving = Math.abs(astroS.spd) > 0.08;
++  /* 转向：走路时也能转向（原地转向略慢） */
++  if (turn) {
++    astroS.head += turn * (moving ? 2.4 : 1.5) * dt * (astroS.spd >= 0 ? 1 : -1);
++  }
++  /* 位置（宇航员模型默认面朝 +z，rotation.y=head 时前向 = (sin h, cos h)） */
++  astroS.x += Math.sin(astroS.head) * astroS.spd * dt;
++  astroS.z += Math.cos(astroS.head) * astroS.spd * dt;
++  astro.position.set(astroS.x, 0, astroS.z);
++  astro.rotation.y = astroS.head;
++  /* 走路动画：相位随速度推进，腿/手摆动 + 低重力轻弹 */
++  astroS.phase += Math.abs(astroS.spd) * dt * 7.0;
++  var ph = astroS.phase;
++  var mv = moving ? 1 : 0;
++  var L = astro.userData.limbs;
++  if (L) {
++    L.thighs.forEach(function (m, i) {
++      var sw = Math.sin(ph + i * Math.PI);
++      m.position.z = sw * 0.16 * mv;
++      m.rotation.x = sw * 0.40 * mv;
++    });
++    L.shins.forEach(function (m, i) {
++      var sw = Math.sin(ph + i * Math.PI + 0.5);
++      m.position.z = sw * 0.13 * mv;
++      m.rotation.x = sw * 0.34 * mv;
++    });
++    L.arms.forEach(function (m, i) {
++      var sw = Math.sin(ph + i * Math.PI + Math.PI);
++      m.position.z = sw * 0.11 * mv;
++      m.rotation.x = sw * 0.32 * mv;
++    });
++    L.gloves.forEach(function (m, i) {
++      if (i < 2) m.position.z = Math.sin(ph + i * Math.PI + Math.PI) * 0.12 * mv;
++    });
++  }
++  astro.position.y = Math.abs(Math.sin(ph * 0.5)) * 0.07 * mv;
++  astro.rotation.z = Math.sin(ph) * 0.025 * mv;
++  /* 摄像机：宇航员后上方第三人称，平滑跟随 */
++  var d = 7.5 * vk() * (state.cam === 'near' ? 0.6 : 1);
++  var camX = astroS.x - Math.sin(astroS.head) * d;
++  var camZ = astroS.z - Math.cos(astroS.head) * d;
++  aimSmooth(camX, 2.0 + d * 0.30, camZ, astroS.x, 1.5, astroS.z, 0.16);
++  teleData = [
++    ['速度', Math.abs(astroS.spd).toFixed(1), 'm/s'],
++    ['航向', Math.round((astroS.head * 180 / Math.PI + 360) % 360) + '°', ''],
++    ['模式', '步行', ''],
++    ['位置', Math.sqrt(astroS.x * astroS.x + astroS.z * astroS.z).toFixed(0), 'm'],
++    ['MET', metStr(state.met).slice(0, 5), ''],
++    ['通讯', 'S 波段', '']
++  ];
++}
++
++/* 按钮/键盘切换绑定（DOM 就绪后） */
++(function bindRoverSwitch() {
++  function attach() {
++    var b = document.getElementById('btnSwitch');
++    if (b && !b._bound) {
++      b._bound = true;
++      b.addEventListener('click', function (e) { e.preventDefault(); toggleRoverMode(); });
++    }
++    window.addEventListener('keydown', function (e) {
++      if ((e.key === 'Tab' || e.code === 'Tab') && state.mode === 'rover') {
++        e.preventDefault();
++        toggleRoverMode();
++      }
++    });
++  }
++  if (document.readyState === 'loading') {
++    document.addEventListener('DOMContentLoaded', attach);
++  } else {
++    attach();
++  }
++})();
++/* ================= 月球车 / 宇航员切换 ================= */
++function toggleRoverMode() {
++  if (state.mode !== 'rover') return;
++  state.roverMode = (state.roverMode === 'rover') ? 'astro' : 'rover';
++  var btn = $('btnSwitch');
++  if (state.roverMode === 'astro') {
++    if (btn) btn.textContent = '🚀 切换到月球车驾驶';
++    astro.visible = true;
++    /* 宇航员从月球车旁边起步，朝向车头方向 */
++    astroS.x = roverS.x + Math.cos(roverS.head) * 1.6 + Math.sin(roverS.head) * 1.2;
++    astroS.z = roverS.z - Math.sin(roverS.head) * 1.6 + Math.cos(roverS.head) * 1.2;
++    astroS.head = roverS.head;
++    astroS.spd = 0;
++    state.snap = true;
++    log('切换到宇航员步行：WASD 控制行走，A/D 转向。（Tab 键也可切换）');
++    setPhase('宇航员步行 · 月面', '低重力下行走：步幅轻快，转身惯性小。可以走到月球车旁切换回驾驶。', 'rover');
++  } else {
++    if (btn) btn.textContent = '🚀 切换到宇航员步行';
++    if (tip) tip.innerHTML = '🚀 当前：<b>月球车驾驶</b>（WASD 开） · 按 <b>TAB</b> 或点底部按钮切到 <b>宇航员步行</b>';
++    astroS.spd = 0;
++    state.snap = true;
++    log('切换到月球车驾驶：W/S 前进倒车，A/D 转向。');
++    setPhase('月球车驾驶 · 月面', 'W/S 控制前进倒车，A/D 转向（需要行驶中才能转弯）。', 'rover');
++  }
++  updateHint();
++}
++
+ /* ================= 模式切换 / 主循环 ================= */
+ function startChapter(i) {
+   state.idx = i; state.ct = 0; state.snap = true;
+@@ -2424,6 +2609,10 @@
+   document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.dataset.m === m); });
+   $('timeline').classList.toggle('hide', m !== 'auto');
+   $('thrCtl').classList.toggle('on', m === 'manual');
++  var _rc = $('roverCtl');
++  if (_rc) _rc.classList.toggle('on', m === 'rover');
++  var _rt = $('roverTip');
++  if (_rt) _rt.classList.toggle('hide', m !== 'rover');
+   if (m === 'auto') startChapter(0);
+   else if (m === 'manual') enterManual();
+   else if (m === 'abort') enterAbort();
+@@ -2437,7 +2626,7 @@
+     auto: '播放沿 7 阶段飞行；点顶部时间线跳转；V 切换视角；空格暂停。',
+     manual: '↑↓ 油门，←→ 姿态倾斜；V 切换视角；空格暂停。',
+     abort: '下降中按「⚠ 中止」或空格触发上升级逃逸。',
+-    rover: 'WASD / 方向键驾驶月球车；V 切换视角。'
++    rover: 'WASD / 方向键驾驶月球车；Tab 切换宇航员步行；V 切换视角。'
+   };
+   $('hint').innerHTML = '<b>操作</b> ' + h[state.mode];
+ }
+@@ -2516,7 +2705,7 @@
+     }
+   } else if (state.mode === 'manual') stepManual(sdt);
+   else if (state.mode === 'abort') stepAbort(sdt);
+-  else if (state.mode === 'rover') stepRover(sdt);
++  else if (state.mode === 'rover') { if (state.roverMode === 'astro') stepAstroWalk(sdt); else stepRover(sdt); }
+   updateShadow();
+   updateFog();
+ }

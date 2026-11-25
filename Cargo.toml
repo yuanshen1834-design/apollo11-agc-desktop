@@ -1,0 +1,19 @@
+[package]
+name = "apollo11-agc-desktop"
+version = "1.0.0"
+description = "Apollo 11 AGC 网页游戏桌面版（WebView2 套壳，原样加载）"
+edition = "2021"
+
+[dependencies]
+wry = "0.50"
+tao = "0.34"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
+
+[[bin]]
+name = "Apollo11AGC"
+path = "src/main.rs"
